@@ -4,6 +4,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
 import tensorflow as tf
+from sklearn.tree import DecisionTreeClassifier
 from tensorboard.compat.tensorflow_stub import string
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.models import Sequential
@@ -78,11 +79,13 @@ def classification(imported_data, model):
 
     if model == 'rf':
         random_forest(features, labels)
+    elif model == 'dt':
+        decision_tree(features, labels)
     # elif model == 'CNN':
     #     cnn(dataset,labels)
 
-def random_forest(data,labels):
-    X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=0.2, random_state=42)
+def random_forest(features,labels):
+    X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
 
     model = RandomForestClassifier(n_estimators=25, max_depth=50)
     model.fit(X_train,y_train)
@@ -90,6 +93,17 @@ def random_forest(data,labels):
     y_pred = model.predict(X_test)
 
     my_evaluate(y_test,y_pred)
+
+def decision_tree(features,labels):
+    X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
+
+    model = DecisionTreeClassifier(criterion='gini', splitter='best', max_depth=None)
+
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test)
+
+    my_evaluate(y_test, y_pred)
 
 # def cnn(data, labels, rs=42, epochs=10, batch_size=16):
 #     #Sets value N to define the length of the dataset

@@ -7,6 +7,7 @@ read_data = filemanager.read_csv_file()
 def show_main_menu():
     print("Select a Process")
     print("1. Random Forest")
+    print("2. Decision Tree")
     while True:
         choice =int(input("Enter your selection"))
         process_main_menu(choice)
@@ -16,6 +17,10 @@ def process_main_menu(choice):
         print("[Start] Random Forest")
         dataproccessing.classification(read_data, 'rf')
         print("[End] Random Forest")
+    if choice == 2:
+        print("[Start] Decision Tree")
+        dataproccessing.classification(read_data, 'dt')
+        print("[End] Decision Tree")
     else:
         print("Invalid selection, please try again")
 
