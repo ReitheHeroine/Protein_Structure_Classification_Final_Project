@@ -8,6 +8,7 @@ def show_main_menu():
     print("Select a Process")
     print("1. Random Forest")
     print("2. Decision Tree")
+    print("3. Neural Network")
     while True:
         choice =int(input("Enter your selection"))
         process_main_menu(choice)
@@ -21,6 +22,10 @@ def process_main_menu(choice):
         print("[Start] Decision Tree")
         dataproccessing.classification(read_data, 'dt')
         print("[End] Decision Tree")
+    if choice == 3:
+        print("[Start] Neural Network")
+        dataproccessing.classification(read_data, 'nn')
+        print("[End] Neural Network")
     else:
         print("Invalid selection, please try again")
 
