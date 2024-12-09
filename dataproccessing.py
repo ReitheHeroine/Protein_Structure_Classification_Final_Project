@@ -3,7 +3,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelEncoder
-from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 
 import tensorflow as tf
 from sklearn.tree import DecisionTreeClassifier
@@ -59,7 +59,7 @@ def random_forest(features, labels):
 
     y_pred = model.predict(X_test)
 
-    my_evaluate(y_test,y_pred)
+    c_matrix(y_test, y_pred)
 
 def decision_tree(features, labels):
     X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
@@ -70,7 +70,7 @@ def decision_tree(features, labels):
 
     y_pred = model.predict(X_test)
 
-    my_evaluate(y_test, y_pred)
+    c_matrix(y_test, y_pred)
 
 def neural_network(data, labels):
     data = np.expand_dims(data, axis=-1)
@@ -110,8 +110,16 @@ def neural_network(data, labels):
         truth.append(np.argmax(prob))
 
     #Displays accuracy of the model given the performance across all samples
-    my_evaluate(truth, y_pred)
+    c_matrix(truth, y_pred)
 
 
-def my_evaluate(truth, y_pred):
-    print("Accuracy:", accuracy_score(truth, y_pred) * 100, "%")
+def c_matrix(y_true, y_pred):
+    confusion_matrix(y_true, y_pred)
+    accuracy = accuracy_score(y_true, y_pred)
+    precision = precision_score(y_true, y_pred, average='weighted',zero_division=1)
+    recall = recall_score(y_true, y_pred, average='weighted',zero_division=1)
+    f1 = f1_score(y_true, y_pred, average='weighted',zero_division=1)
+    print(f"Accuracy: {accuracy * 100}%")
+    print(f"Precision: {precision * 100}%")
+    print(f"Recall: {recall * 100}%")
+    print(f"F1 Score: {f1 * 100}%")
