@@ -14,16 +14,17 @@ import seaborn as sns
 from datetime import datetime
 import matplotlib.pyplot as plt
 from collections import Counter
-import itertools
+from itertools import product
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, classification_report, multilabel_confusion_matrix, make_scorer
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.multioutput import MultiOutputClassifier
+from sklearn.utils.class_weight import compute_class_weight
 from keras.models import Sequential
 from keras.layers import Conv1D, Conv2D, MaxPooling1D, MaxPooling2D, Flatten, Dense, Input
-from keras.optimizers import Adam
+from keras.optimizers import Adam, SGD
 from scikeras.wrappers import KerasClassifier
 
 # Specify output file for debugging purposes.
@@ -172,7 +173,7 @@ with open(log_file, 'a') as f:
         # print(num_labels)
         # generate_summary_statistics(features, num_labels, encoded)
         
-        # analyze_and_balance_labels(label_matrix)
+        # visualize_data(protein_data)
         
         # Retrieve feature_names and label_names to identify failure cases later.
         feature_names = features.columns.tolist()
@@ -377,7 +378,7 @@ with open(log_file, 'a') as f:
         print('Timestamp: ', current_time)
         print('Finished testing Decision Tree model.')
 
-    def create_neural_model(learning_rate=1e-3, num_neurons=32, activation='relu'):
+    def create_neural_model(learning_rate=1e-3, num_neurons=32, activation='relu', optimizer='adam'):
         """
         Create a neural network model with the specified hyperparameters.
         
@@ -388,18 +389,31 @@ with open(log_file, 'a') as f:
                 The number of neurons in the hidden layers.
             - activation : str
                 The activation function to use in the hidden layers.
+            - optimizer : str
+                The optimizer to use ('adam' or 'sgd').
         
         Returns:
             - model : Keras model
                 A compiled Keras model ready for training.
         """
+        y_train_shape = (74104, 24)
+        X_train_shape = (74104, 19)
+        
+        # Define optimizers.
+        optimizers = {
+            'adam': Adam(learning_rate=learning_rate),
+            'sgd': SGD(learning_rate=learning_rate)
+        }
+        opt = optimizers[optimizer]
+        
+        # Build the model.
         model = Sequential([
-            Input(shape=(X_train.shape[1],)),
+            Input(shape=(X_train_shape[1],)),
             Dense(num_neurons, activation=activation),
             Dense(num_neurons * 2, activation=activation),
-            Dense(y_train.shape[1], activation='sigmoid')  # Output layer
+            Dense(y_train_shape[1], activation='sigmoid')  # Output layer.
         ])
-        opt = Adam(learning_rate=learning_rate)
+        
         model.compile(loss='binary_crossentropy', optimizer=opt, metrics=['accuracy'])
         return model
 
@@ -418,33 +432,120 @@ with open(log_file, 'a') as f:
                 Prints evaluation metrics for validation and test sets.
         """
         
-        # Wrap the Keras model in a scikit-learn wrapper.
-        model = KerasClassifier(build_fn=create_neural_model, verbose=0)
-
-        # Define the parameter grid for the grid search.
+        # Compute class weights for imbalanced label matrix.
+        class_weights = {}
+        for i in range(y_train.shape[1]):
+            # Compute class weight for each label column.
+            class_weights[i] = compute_class_weight(
+                class_weight='balanced',
+                classes=np.unique(y_train[:, i]),
+                y=y_train[:, i]
+            )
+        
+        print("Calculated Class Weights:", class_weights)
+        
+        # Grid for hyperparameter value to be tested.
         param_grid = {
             'learning_rate': [1e-3, 1e-4],
             'num_neurons': [32, 64],
             'activation': ['relu', 'tanh'],
+            'optimizer': ['adam', 'sgd'],
             'epochs': [10, 20],
-            'batch_size': [32, 64]
+            'batch_size': [16, 32]
         }
-
-        # Perform GridSearchCV.
-        grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=3, verbose=2, scoring='accuracy', n_jobs=-1)
-        grid_search.fit(X_train, y_train, validation_data=(X_val, y_val))
         
-        # Retrieve and display metrics for all tested parameter combinations.
-        results = pd.DataFrame(grid_search.cv_results_)
-        print("\nGrid Search Results:\n")
-        for index, row in results.iterrows():
-            print(f"Params: {row['params']}, Mean Accuracy: {row['mean_test_score']:.4f}, Std Accuracy: {row['std_test_score']:.4f}")
+        # Iterate through all combinations of hyperparameters.
+        best_accuracy = 0
+        best_params = {}
+        
+        for lr, neurons, activation, optimizer, epochs, batch_size in product(
+            param_grid['learning_rate'],
+            param_grid['num_neurons'],
+            param_grid['activation'],
+            param_grid['optimizer'],
+            param_grid['epochs'],
+            param_grid['batch_size']
+        ):
+            print(f"Testing Params: lr={lr}, neurons={neurons}, activation={activation}, "
+                f"optimizer={optimizer}, epochs={epochs}, batch_size={batch_size}")
+            
+            # Create model.
+            model = Sequential([
+                Input(shape=(X_train.shape[1],)),
+                Dense(neurons, activation=activation),
+                Dense(neurons * 2, activation=activation),
+                Dense(y_train.shape[1], activation='sigmoid')
+            ])
+            
+            opt = Adam(learning_rate=lr) if optimizer == 'adam' else SGD(learning_rate=lr)
+            model.compile(loss='binary_crossentropy', optimizer=opt, metrics=['accuracy'])
+            
+            # Fit model with class weights
+            model.fit(
+                X_train,
+                y_train,
+                validation_data=(X_val, y_val),
+                epochs=epochs,
+                batch_size=batch_size,
+                class_weight=class_weights  # Pass class weights
+            )
+            
+            # Evaluate model
+            _, val_accuracy = model.evaluate(X_val, y_val, verbose=0)
+            print(f"Validation Accuracy: {val_accuracy:.4f}")
 
-        # Best parameters and their metrics.
-        best_params = grid_search.best_params_
-        best_model = grid_search.best_estimator_
-        print("\nBest Parameters:", best_params)
-
+            # Track the best accuracy and parameters
+            if val_accuracy > best_accuracy:
+                best_accuracy = val_accuracy
+                best_params = {
+                    "learning_rate": lr,
+                    "num_neurons": neurons,
+                    "activation": activation,
+                    "optimizer": optimizer,
+                    "epochs": epochs,
+                    "batch_size": batch_size
+                }
+        
+        print("\nBest Validation Accuracy:", best_accuracy)
+        print("Best Hyperparameters:", best_params)
+        
+        # # Wrap the Keras model in a scikit-learn wrapper.
+        # model = KerasClassifier(build_fn=create_neural_model, verbose=0)
+        
+        # # Define the parameter grid for the grid search.
+        # # 'model__' prefix passes arguments to create_neural_model.
+        # # 'fit__' passes arguments to .fit() method of KerasClassifier.
+        # param_grid = {
+        #     'model__learning_rate': [1e-3, 1e-4],
+        #     'model__num_neurons': [32, 64],
+        #     'model__activation': ['relu', 'tanh'],
+        #     'model__optimizer': ['adam', 'sgd'],
+        #     'fit__epochs': [10, 20],
+        #     'fit__batch_size': [16, 32, 64],
+        # }
+        
+        # # Wrap the class weights into the fit__class_weight argument.
+        # fit_params = {
+        #     'fit__class_weight': class_weights
+        # }
+        
+        # # Perform GridSearchCV.
+        # grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=3, verbose=2, scoring='accuracy', n_jobs=-1)
+        
+        # # Fit the model with class weights.
+        # grid_search.fit(X_train, y_train, validation_data=(X_val, y_val), **fit_params)
+        
+        # # Retrieve and display metrics for all tested parameter combinations.
+        # results = pd.DataFrame(grid_search.cv_results_)
+        # print("\nGrid Search Results:\n")
+        # for index, row in results.iterrows():
+        #     print(f"Params: {row['params']}, Mean Accuracy: {row['mean_test_score']:.4f}, Std Accuracy: {row['std_test_score']:.4f}")
+            
+        # # Best parameters and their metrics.
+        # best_params = grid_search.best_params_
+        # best_model = grid_search.best_estimator_
+        # print("\nBest Parameters:", best_params)
+        
         # Evaluate the best model on validation set.
         y_pred_val_prob = best_model.predict(X_val)
         y_pred_val = (y_pred_val_prob > 0.5).astype(int)
@@ -467,105 +568,6 @@ with open(log_file, 'a') as f:
         
         print('Timestamp: ', current_time)
         print('Finished testing Neural Network model.')
-
-    # def neural_network(X_train, X_test, X_val, y_train, y_test, y_val):
-    #     """
-    #     Train and evaluate a neural network for multi-label binary classification.
-        
-    #     Args:
-    #         - X_train, X_test, X_val : np.array or pd.DataFrame
-    #             Input feature matrices for training, testing, and validation sets.
-            
-    #         - y_train, y_test, y_val : np.array or pd.DataFrame
-    #             Multi-label binary target matrices for training, testing, and validation sets.
-        
-    #     Returns:
-    #         - None
-    #             Prints evaluation metrics for validation and test sets.
-    #     """
-    #     # Determine the number of labels (output classes).
-    #     num_labels = y_train.shape[1]
-        
-    #     # Define the neural network model.
-    #     model = Sequential([
-    #         Input(shape=(X_train.shape[1],)),  # Flatten the input features.
-    #         Dense(32, activation='relu'),  # Hidden layer with 32 neurons and ReLU activation.
-    #         Dense(64, activation='relu'),  # Hidden layer with 64 neurons and ReLU activation.
-    #         Dense(num_labels, activation='sigmoid')  # Output layer with sigmoid activation for multi-label classification.
-    #     ])
-        
-    #     # Compile the model with binary crossentropy loss (for multi-label classification).
-    #     opt = Adam(learning_rate=1e-3)
-    #     model.compile(loss='binary_crossentropy', optimizer=opt, metrics=['accuracy'])
-        
-    #     # Display model summary.
-    #     model.summary()
-        
-    #     # Train the model using the training and validation sets.
-    #     model.fit(X_train, y_train, epochs=15, validation_data=(X_val, y_val), batch_size=32)
-    #     print("Finish training")
-        
-    #     # Predict probabilities for the test set.
-    #     y_pred_prob = model.predict(X_test)
-        
-    #     # Convert probabilities to binary predictions (threshold = 0.5).
-    #     y_pred = (y_pred_prob > 0.5).astype(int)
-        
-    #     # Evaluate the model on the test set.
-    #     c_matrix(y_test, y_pred, label='Neural Network Multi-Output Classifier on Test Set')
-        
-    #     print('Timestamp: ', current_time)
-    #     print('Finished testing Neural Network model.')
-        
-    #     # print("Evaluating on Test Set:")
-    #     # accuracy = accuracy_score(y_test, y_pred)
-    #     # precision = precision_score(y_test, y_pred, average='weighted', zero_division=1)
-    #     # recall = recall_score(y_test, y_pred, average='weighted', zero_division=1)
-    #     # f1 = f1_score(y_test, y_pred, average='weighted', zero_division=1)
-
-    #     # print(f"Accuracy: {accuracy * 100:.2f}%")
-    #     # print(f"Precision: {precision * 100:.2f}%")
-    #     # print(f"Recall: {recall * 100:.2f}%")
-    #     # print(f"F1 Score: {f1 * 100:.2f}%")
-        
-    #     # data = np.expand_dims(data, axis=-1)
-    #     # num_classes = len(np.unique(labels))
-
-    #     # #Establishes training/testing data
-    #     # X_train, X_test, y_train, y_test = train_test_split(data,labels,test_size=0.25)
-
-    #     # #Defines the cnn model to be used and the layers that will be used in the process
-    #     # model = Sequential([
-    #     #     Flatten(input_shape=(data.shape[1],data.shape[2])),
-    #     #     Dense(32, activation='relu'),
-    #     #     Dense(64, activation='relu'),
-    #     #     Dense(num_classes, activation='softmax')
-    #     # ])
-
-    #     # #Defines the optimizer, the learning rate, and compiles the model using given parameters
-    #     # opt = Adam(learning_rate=1e-3)
-    #     # model.compile(loss='sparse_categorical_crossentropy',
-    #     #     optimizer=opt,
-    #     #     metrics=['accuracy'])
-
-    #     # #Displays live model data processing and fits the training data
-    #     # model.summary()
-    #     # model.fit(X_train, y_train, epochs=15)
-    #     # print("Finish training")
-
-    #     # #Displays test label and compares it to label the cnn predicted
-    #     # y_pred_prob = model.predict(X_test)
-    #     # print("y_test:", y_test)
-    #     # print("y_pred_prob:", y_pred_prob)
-
-    #     # y_pred, truth = [], []
-    #     # for prob in y_pred_prob:
-    #     #     y_pred.append(np.argmax(prob))
-    #     # for prob in y_test:
-    #     #     truth.append(np.argmax(prob))
-
-    #     # #Displays accuracy of the model given the performance across all samples
-    #     # c_matrix(truth, y_pred)
 
     def c_matrix(y_true, y_pred, label):
         """
@@ -1151,6 +1153,52 @@ with open(log_file, 'a') as f:
         for combination, count in combination_counts.items():
             if count < threshold:
                 print(f"Consider oversampling combination {combination}.")
+
+    def visualize_data(protein_data):
+        # Extract only the binary label columns.
+        binary_labels = protein_data.iloc[:, 1:24]
+        
+        # Count occurrences of each label.
+        label_counts = binary_labels.sum().sort_values(ascending=False)
+        
+        # Plot label frequency.
+        plt.figure(figsize=(12, 6))
+        label_counts.plot(kind='bar', color='skyblue')
+        plt.title('Frequency of Binary Labels', fontsize=14)
+        plt.xlabel('Labels', fontsize=12)
+        plt.ylabel('Frequency', fontsize=12)
+        plt.xticks(rotation=45, ha='right')
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.tight_layout()
+        plt.show()
+        
+        # Compute co-occurrence matrix.
+        co_occurrence = binary_labels.T.dot(binary_labels)
+        
+        # Normalize for better visualization.
+        co_occurrence_normalized = co_occurrence.div(co_occurrence.sum(axis=1), axis=0)
+        
+        # Plot heatmap of label co-occurrence.
+        plt.figure(figsize=(12, 10))
+        sns.heatmap(co_occurrence_normalized, annot=False, cmap="Blues", square=True, cbar=True)
+        plt.title('Co-occurrence Heatmap of Binary Labels', fontsize=14)
+        plt.xlabel('Labels', fontsize=12)
+        plt.ylabel('Labels', fontsize=12)
+        plt.tight_layout()
+        plt.show()
+        
+        # Count the number of labels assigned to each sample.
+        multi_label_counts = binary_labels.sum(axis=1)
+        
+        # Plot histogram of multi-label counts.
+        plt.figure(figsize=(10, 6))
+        plt.hist(multi_label_counts, bins=range(1, multi_label_counts.max() + 2), color='skyblue', edgecolor='black', align='left')
+        plt.title('Distribution of Multi-label Counts per Sample', fontsize=14)
+        plt.xlabel('Number of Labels per Sample', fontsize=12)
+        plt.ylabel('Frequency of Samples', fontsize=12)
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.tight_layout()
+        plt.show()
 
     imported_data = pd.read_csv('pdb_data_no_dups.csv')
     # classification(imported_data,'rf')
