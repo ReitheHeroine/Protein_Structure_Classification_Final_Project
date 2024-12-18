@@ -14,14 +14,13 @@ import seaborn as sns
 from datetime import datetime
 import matplotlib.pyplot as plt
 from collections import Counter
-from itertools import product
+import itertools
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, classification_report, multilabel_confusion_matrix, make_scorer
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.multioutput import MultiOutputClassifier
-from sklearn.utils.class_weight import compute_class_weight
 from keras.models import Sequential
 from keras.layers import Conv1D, Conv2D, MaxPooling1D, MaxPooling2D, Flatten, Dense, Input
 from keras.optimizers import Adam, SGD
@@ -45,7 +44,7 @@ with open(log_file, 'a') as f:
                 return False
         return True
 
-    def classification(imported_data, model):
+    def classification(imported_data, model, multi=False):
         # Returns Pandas df containing multi-class binary matrix of the 'classification' column in addition to columns of interest: ['structureId',
         #    'transport', 'adhesion', 'other_binding', 'transferase', 'metal', 'viral', 'inhibitor', 'membrane', 'oxidoreductase', 'RNA', 'structural',
         #    'lyase', 'DNA_RNA_binding', 'transcription', 'signal', 'immune', 'chaperone', 'isomerase', 'hydrolase', 'protein_binding', 'DNA',
@@ -132,64 +131,96 @@ with open(log_file, 'a') as f:
         label_matrix.to_csv('label_matrix.csv', index=True)
         features.to_csv('features.csv', index=True)
         
-        # First Split: Train (80%) and validation + test (20%) sets.
-        X_train, X_test_val, y_train, y_test_val = train_test_split(features, label_matrix, test_size=0.2, random_state=42)
-        
-        # Optional: Check shape of train, validation + test sets.
-        # print('Shape of train/validation+test: ')
-        # print(X_train.shape)
-        # print(y_train.shape)
-        # print(X_test_val.shape)
-        # print(y_test_val.shape)
-        
-        # Second Split: Train (50%) and validation (50%) sets.
-        X_test, X_val, y_test, y_val = train_test_split(X_test_val, y_test_val, test_size=0.5, random_state=42)
-        
-        # Total data set split into train (80%), validation (10%), and test (10%).
-        
-        # Optional: Check shape of train, validation, and test sets.
-        # print('Shape of test/train/val: ')
-        # print(X_test.shape)
-        # print(y_test.shape)
-        # print(X_train.shape)
-        # print(y_train.shape)
-        # print(X_val.shape)
-        # print(y_val.shape)
-        
-        # print('\nFeature names and label names: ')
-        # print(feature_names)
-        # print(label_names)
-        
-        # list = [X_test, y_test, X_train, y_train, X_val, y_val]
-        # for df in list:
-        #     if isinstance(df, np.ndarray):
-        #         print(f"{df} is a NumPy array.")
+        if multi==True:
+            # First Split: Train (80%) and validation + test (20%) sets.
+            X_train, X_test_val, y_train, y_test_val = train_test_split(features, label_matrix, test_size=0.2, random_state=42)
             
-        #     if isinstance(df, pd.DataFrame):
-        #         print(f"{df} is a Pandas DataFrame.")
+            # Optional: Check shape of train, validation + test sets.
+            # print('Shape of train/validation+test: ')
+            # print(X_train.shape)
+            # print(y_train.shape)
+            # print(X_test_val.shape)
+            # print(y_test_val.shape)
+            
+            # Second Split: Train (50%) and validation (50%) sets.
+            X_test, X_val, y_test, y_val = train_test_split(X_test_val, y_test_val, test_size=0.5, random_state=42)
+            
+            # Total data set split into train (80%), validation (10%), and test (10%).
+            
+            # Optional: Check shape of train, validation, and test sets.
+            # print('Shape of test/train/val: ')
+            # print(X_test.shape)
+            # print(y_test.shape)
+            # print(X_train.shape)
+            # print(y_train.shape)
+            # print(X_val.shape)
+            # print(y_val.shape)
+            
+            # print('\nFeature names and label names: ')
+            # print(feature_names)
+            # print(label_names)
+            
+            # list = [X_test, y_test, X_train, y_train, X_val, y_val]
+            # for df in list:
+            #     if isinstance(df, np.ndarray):
+            #         print(f"{df} is a NumPy array.")
+                
+            #     if isinstance(df, pd.DataFrame):
+            #         print(f"{df} is a Pandas DataFrame.")
+            
+            # # Explore data distribution and statistics.
+            # num_labels = label_matrix.iloc[:, :6] # Numerical features only, one-hot encoded feature included separately in encoded.
+            # print(num_labels)
+            # generate_summary_statistics(features, num_labels, encoded)
+            
+            # visualize_data(protein_data)
+            
+            # Retrieve feature_names and label_names to identify failure cases later.
+            feature_names = features.columns.tolist()
+            label_names = label_matrix.columns.tolist()
+            
+            # Convert Pandas data frames to NumPy arrays.
+            X_train, y_train = X_train.to_numpy(), y_train.to_numpy()
+            X_test, y_test = X_test.to_numpy(), y_test.to_numpy()
+            X_val, y_val = X_val.to_numpy(), y_val.to_numpy()
+            
+            if model == 'rf':
+                random_forest(X_train, X_test, X_val, y_train, y_test, y_val, feature_names, label_names, run_param_test=False)
+            elif model == 'dt':
+                decision_tree(X_train, X_test, X_val, y_train, y_test, y_val, feature_names, label_names)
+            elif model == 'nn':
+                neural_network(X_train, X_test, X_val, y_train, y_test, y_val, feature_names, label_names)
         
-        # # Explore data distribution and statistics.
-        # num_labels = label_matrix.iloc[:, :6] # Numerical features only, one-hot encoded feature included separately in encoded.
-        # print(num_labels)
-        # generate_summary_statistics(features, num_labels, encoded)
-        
-        # visualize_data(protein_data)
-        
-        # Retrieve feature_names and label_names to identify failure cases later.
-        feature_names = features.columns.tolist()
-        label_names = label_matrix.columns.tolist()
-        
-        # Convert Pandas data frames to NumPy arrays.
-        X_train, y_train = X_train.to_numpy(), y_train.to_numpy()
-        X_test, y_test = X_test.to_numpy(), y_test.to_numpy()
-        X_val, y_val = X_val.to_numpy(), y_val.to_numpy()
-        
-        if model == 'rf':
-            random_forest(X_train, X_test, X_val, y_train, y_test, y_val, feature_names, label_names, run_param_test=False)
-        elif model == 'dt':
-            decision_tree(X_train, X_test, X_val, y_train, y_test, y_val, feature_names, label_names)
-        elif model == 'nn':
-            neural_network(X_train, X_test, X_val, y_train, y_test, y_val, feature_names, label_names)
+        else:
+            label_matrix, features = remove_multi_label_samples(label_matrix, features)
+            
+            print("Filtered Labels:")
+            print(label_matrix)
+            
+            print("Filtered Features:")
+            print(features)
+            
+            # First Split: Train (80%) and validation + test (20%) sets.
+            X_train, X_test_val, y_train, y_test_val = train_test_split(features, label_matrix, test_size=0.2, random_state=42)
+            
+            # Second Split: Train (50%) and validation (50%) sets.
+            X_test, X_val, y_test, y_val = train_test_split(X_test_val, y_test_val, test_size=0.5, random_state=42)
+            
+            # Retrieve feature_names and label_names to identify failure cases later.
+            feature_names = features.columns.tolist()
+            label_names = label_matrix.columns.tolist()
+            
+            # Convert Pandas data frames to NumPy arrays.
+            X_train, y_train = X_train.to_numpy(), y_train.to_numpy()
+            X_test, y_test = X_test.to_numpy(), y_test.to_numpy()
+            X_val, y_val = X_val.to_numpy(), y_val.to_numpy()
+            
+            # if model == 'rf':
+            #     random_forest(X_train, X_test, X_val, y_train, y_test, y_val, feature_names, label_names, run_param_test=False)
+            # elif model == 'dt':
+            #     decision_tree(X_train, X_test, X_val, y_train, y_test, y_val, feature_names, label_names)
+            # elif model == 'nn':
+            #     neural_network(X_train, X_test, X_val, y_train, y_test, y_val, feature_names, label_names)
 
     def random_forest(X_train, X_test, X_val, y_train, y_test, y_val, feature_names, label_names, run_param_test):
         """
@@ -432,119 +463,35 @@ with open(log_file, 'a') as f:
                 Prints evaluation metrics for validation and test sets.
         """
         
-        # Compute class weights for imbalanced label matrix.
-        class_weights = {}
-        for i in range(y_train.shape[1]):
-            # Compute class weight for each label column.
-            class_weights[i] = compute_class_weight(
-                class_weight='balanced',
-                classes=np.unique(y_train[:, i]),
-                y=y_train[:, i]
-            )
-        
-        print("Calculated Class Weights:", class_weights)
-        
-        # Grid for hyperparameter value to be tested.
+        # Wrap the Keras model in a scikit-learn wrapper.
+        model = KerasClassifier(build_fn=create_neural_model, verbose=0)
+
+        # Define the parameter grid for the grid search.
+        # 'model__' prefix passes arguments to create_neural_model.
+        # 'fit__' passes arguments to .fit() method of KerasClassifier.
         param_grid = {
-            'learning_rate': [1e-3, 1e-4],
-            'num_neurons': [32, 64],
-            'activation': ['relu', 'tanh'],
-            'optimizer': ['adam', 'sgd'],
-            'epochs': [10, 20],
-            'batch_size': [16, 32]
+            'model__learning_rate': [1e-3, 1e-4],
+            'model__num_neurons': [32, 64],
+            'model__activation': ['relu', 'tanh'],
+            'model__optimizer': ['adam', 'sgd'],
+            'fit__epochs': [10, 20],
+            'fit__batch_size': [16, 32, 64],
         }
         
-        # Iterate through all combinations of hyperparameters.
-        best_accuracy = 0
-        best_params = {}
+        # Perform GridSearchCV.
+        grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=3, verbose=2, scoring='accuracy', n_jobs=-1)
+        grid_search.fit(X_train, y_train, validation_data=(X_val, y_val))
         
-        for lr, neurons, activation, optimizer, epochs, batch_size in product(
-            param_grid['learning_rate'],
-            param_grid['num_neurons'],
-            param_grid['activation'],
-            param_grid['optimizer'],
-            param_grid['epochs'],
-            param_grid['batch_size']
-        ):
-            print(f"Testing Params: lr={lr}, neurons={neurons}, activation={activation}, "
-                f"optimizer={optimizer}, epochs={epochs}, batch_size={batch_size}")
+        # Retrieve and display metrics for all tested parameter combinations.
+        results = pd.DataFrame(grid_search.cv_results_)
+        print("\nGrid Search Results:\n")
+        for index, row in results.iterrows():
+            print(f"Params: {row['params']}, Mean Accuracy: {row['mean_test_score']:.4f}, Std Accuracy: {row['std_test_score']:.4f}")
             
-            # Create model.
-            model = Sequential([
-                Input(shape=(X_train.shape[1],)),
-                Dense(neurons, activation=activation),
-                Dense(neurons * 2, activation=activation),
-                Dense(y_train.shape[1], activation='sigmoid')
-            ])
-            
-            opt = Adam(learning_rate=lr) if optimizer == 'adam' else SGD(learning_rate=lr)
-            model.compile(loss='binary_crossentropy', optimizer=opt, metrics=['accuracy'])
-            
-            # Fit model with class weights
-            model.fit(
-                X_train,
-                y_train,
-                validation_data=(X_val, y_val),
-                epochs=epochs,
-                batch_size=batch_size,
-                class_weight=class_weights  # Pass class weights
-            )
-            
-            # Evaluate model
-            _, val_accuracy = model.evaluate(X_val, y_val, verbose=0)
-            print(f"Validation Accuracy: {val_accuracy:.4f}")
-
-            # Track the best accuracy and parameters
-            if val_accuracy > best_accuracy:
-                best_accuracy = val_accuracy
-                best_params = {
-                    "learning_rate": lr,
-                    "num_neurons": neurons,
-                    "activation": activation,
-                    "optimizer": optimizer,
-                    "epochs": epochs,
-                    "batch_size": batch_size
-                }
-        
-        print("\nBest Validation Accuracy:", best_accuracy)
-        print("Best Hyperparameters:", best_params)
-        
-        # # Wrap the Keras model in a scikit-learn wrapper.
-        # model = KerasClassifier(build_fn=create_neural_model, verbose=0)
-        
-        # # Define the parameter grid for the grid search.
-        # # 'model__' prefix passes arguments to create_neural_model.
-        # # 'fit__' passes arguments to .fit() method of KerasClassifier.
-        # param_grid = {
-        #     'model__learning_rate': [1e-3, 1e-4],
-        #     'model__num_neurons': [32, 64],
-        #     'model__activation': ['relu', 'tanh'],
-        #     'model__optimizer': ['adam', 'sgd'],
-        #     'fit__epochs': [10, 20],
-        #     'fit__batch_size': [16, 32, 64],
-        # }
-        
-        # # Wrap the class weights into the fit__class_weight argument.
-        # fit_params = {
-        #     'fit__class_weight': class_weights
-        # }
-        
-        # # Perform GridSearchCV.
-        # grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=3, verbose=2, scoring='accuracy', n_jobs=-1)
-        
-        # # Fit the model with class weights.
-        # grid_search.fit(X_train, y_train, validation_data=(X_val, y_val), **fit_params)
-        
-        # # Retrieve and display metrics for all tested parameter combinations.
-        # results = pd.DataFrame(grid_search.cv_results_)
-        # print("\nGrid Search Results:\n")
-        # for index, row in results.iterrows():
-        #     print(f"Params: {row['params']}, Mean Accuracy: {row['mean_test_score']:.4f}, Std Accuracy: {row['std_test_score']:.4f}")
-            
-        # # Best parameters and their metrics.
-        # best_params = grid_search.best_params_
-        # best_model = grid_search.best_estimator_
-        # print("\nBest Parameters:", best_params)
+        # Best parameters and their metrics.
+        best_params = grid_search.best_params_
+        best_model = grid_search.best_estimator_
+        print("\nBest Parameters:", best_params)
         
         # Evaluate the best model on validation set.
         y_pred_val_prob = best_model.predict(X_val)
@@ -1200,7 +1147,41 @@ with open(log_file, 'a') as f:
         plt.tight_layout()
         plt.show()
 
+    def remove_multi_label_samples(binary_multi_label_matrix, feature_matrix=None):
+        """
+        Removes all multi-label samples from a binary multi-label matrix.
+
+        Args:
+            - binary_multi_label_matrix (np.array or pd.DataFrame): 
+            A binary multi-label matrix where each row corresponds to a sample 
+            and each column corresponds to a label (1 for presence, 0 for absence).
+            
+            - feature_matrix (np.array or pd.DataFrame, optional):
+            The feature matrix corresponding to the binary multi-label matrix. 
+            If provided, it will also remove rows in the feature matrix corresponding 
+            to multi-label samples.
+
+        Returns:
+            - filtered_labels (np.array): Binary matrix with only single-label samples.
+            - filtered_features (np.array or None): Corresponding filtered feature matrix, if feature_matrix is provided. Otherwise, None.
+        """
+        # Calculate the sum of each row to count labels per sample.
+        row_sums = np.sum(binary_multi_label_matrix, axis=1)
+
+        # Identify single-label samples (rows with exactly one '1').
+        single_label_indices = np.where(row_sums == 1)[0]
+
+        # Filter the label matrix to include only single-label samples.
+        filtered_labels = binary_multi_label_matrix[single_label_indices]
+
+        # If feature_matrix is provided, filter it as well.
+        if feature_matrix is not None:
+            filtered_features = feature_matrix[single_label_indices]
+            return filtered_labels, filtered_features
+
+        return filtered_labels, None
+
     imported_data = pd.read_csv('pdb_data_no_dups.csv')
-    # classification(imported_data,'rf')
-    # classification(imported_data,'dt')
-    classification(imported_data,'nn')
+    # classification(imported_data,'rf',False)
+    # classification(imported_data,'dt',False)
+    classification(imported_data,'nn',False)
